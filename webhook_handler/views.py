@@ -194,7 +194,8 @@ def perfil(id_whatsapp,  mensagem=None, grupo_id=None):
         mensagem = mensagem.replace('@', '').split()
         try:
             jogador = Jogador.objects.get(id_whatsapp=mensagem[1])
-            texto_resposta = f"Nome: {jogador.nome}\nNúmero: {jogador.id_whatsapp}\nEstrelas: {estrelas(jogador.estrelas)}\nPosicação: {jogador.get_posição()}"
+            texto_resposta = f"Nome: {jogador.nome}\nNúmero: {jogador.id_whatsapp}\nEstrelas: {estrelas(jogador.estrelas)}\nPosicação: {jogador.get_posição()}\nQuantidade de partidas: {jogador.jogos}"
+
             return requisicao_post(texto_resposta, grupo_id)
 
         except Jogador.DoesNotExist:
