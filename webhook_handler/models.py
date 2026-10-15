@@ -81,4 +81,4 @@ class ListaDeEspera(models.Model):
 @receiver(post_save, sender=Baba)
 def criar_lista_de_espera(sender, instance, created, **kwargs):
     if created:  # Se o Baba acabou de ser criado (e não apenas editado)
-        ListaDeEspera.objects.create(baba=instance)
+        ListaDeEspera.objects.create(fk_baba=instance)
