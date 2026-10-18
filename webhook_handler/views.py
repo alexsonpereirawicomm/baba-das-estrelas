@@ -391,7 +391,7 @@ def sair(id_whatsapp, grupo_id):
     elif jogador.lista_de_espera is not None:
         jogador.lista_de_espera = None
         jogador.save()
-        
+
         texto_resposta = f"O Jogador {jogador.nome} saiu da lista de espera do baba."
         requisicao_post(texto_resposta, grupo_id)
         return
@@ -643,7 +643,7 @@ def comandos(
 # Grupos permitidos
 # allowed_groups = ['120363429280772424@g.us',
 #                   '120363412694811478@g.us', '120363214522520270@g.us']
-allowed_groups = ['120363412694811478@g.us']
+allowed_groups = [environ.get('ALLOWED_GROUPS')]
 
 
 @csrf_exempt
