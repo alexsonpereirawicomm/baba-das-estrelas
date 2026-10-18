@@ -644,7 +644,7 @@ def comandos(
 # Grupos permitidos
 # allowed_groups = ['120363429280772424@g.us',
 #                   '120363412694811478@g.us', '120363214522520270@g.us']
-allowed_groups = [environ.get('ALLOWED_GROUPS')]
+allowed_groups = environ.get('ALLOWED_GROUPS').split(',')
 
 
 @csrf_exempt
