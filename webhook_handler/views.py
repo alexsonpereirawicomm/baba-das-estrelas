@@ -66,8 +66,9 @@ def liberarLista(id_whatsapp, mensagem='', grupo_id=None):
                 # Mensagem de aviso para informar que o baba foi liberado
                 jogador = Jogador.objects.get(id_whatsapp=id_whatsapp)
                 texto_resposta = f"O Baba '{baba.nome}' foi liberado pelo ADM {jogador.nome}!"
-                # requisicao_post(texto_resposta, environ.get('CANAL_DE_AVISOS_ID'))
-                requisicao_post(texto_resposta, grupo_id)
+                requisicao_post(texto_resposta, environ.get('CANAL_DE_AVISOS_ID'))
+                # Descomente para debugar
+                # requisicao_post(texto_resposta, grupo_id)
 
                 # Mensagem de resposta para o grupo informando que o baba foi liberado com sucesso
                 texto_resposta = f"Baba '{baba.nome}' liberado com sucesso!"
