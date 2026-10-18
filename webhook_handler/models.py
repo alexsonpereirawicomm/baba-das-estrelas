@@ -47,6 +47,7 @@ class Jogador(models.Model):
     jogara = models.CharField(max_length=1, default=Posicao.LINHA)
     jogos = models.IntegerField(default=0)
     is_admin = models.BooleanField(default=False)
+    entrou_lista = models.DateTimeField(null=True)
 
     def __str__(self):
         return f"{self.nome}"
@@ -76,6 +77,9 @@ class Convidado(models.Model):
 class ListaDeEspera(models.Model):
     fk_baba = models.OneToOneField(
         Baba, on_delete=models.CASCADE, related_name="baba")
+
+    def __str__(self) -> str:
+        return f'Lista de espera de: {self.fk_baba.nome}'
 
 
 @receiver(post_save, sender=Baba)
