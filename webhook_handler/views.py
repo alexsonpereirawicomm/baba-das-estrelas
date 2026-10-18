@@ -13,13 +13,14 @@ from django.http import JsonResponse
 from django.core.cache import cache
 import locale
 from .eleicao import padrao_eleicao
-
+from django.utils import timezone
 # Decoradores
 from django.views.decorators.csrf import csrf_exempt
 from .decorators import admin_required, cadastro_required
 
 # Modelos
-from .models import Jogador, Baba
+from django.db.models import Q
+from .models import Jogador, Baba, ListaDeEspera
 
 # Verificador de Etapas de comandos de multiplas etapas
 # (ver maneira de fazer com cache, pois o user pode entrar em uma etapa e n terminala)
@@ -95,25 +96,29 @@ def liberarLista(id_whatsapp, mensagem='', grupo_id=None):
 # Funcionalidade para fechar lista
 @admin_required
 def fecharLista(id_whatsapp, grupo_id):
-    jogadores = Jogador.objects.all()
-    babas = Baba.objects.filter(is_active=True).all()
+    baba_ativo = Baba.objects.filter(is_active=True).first()
 
-    if not babas.exists():
+    if baba_ativo is None:
         texto_resposta = f'Não tem nenhum baba aberto'
         return requisicao_post(texto_resposta, grupo_id)
     else:
-        baba_ativo = Baba.objects.filter(is_active=True).first()
         texto_resposta = f'o Baba {baba_ativo.nome} foi fechado pelo ADM {Jogador.objects.get(id_whatsapp=id_whatsapp).nome}\n Obrigado pela presença de todos!'
         requisicao_post(texto_resposta, grupo_id)
         # requisicao_post(texto_resposta, environ.get('CANAL_DE_AVISOS_ID'))
 
-        # Tira todos os babas para não ativos
-        for baba in babas:
-            baba.is_active = False
-            baba.save()
+        # Tira o baba para não ativos
+        baba_ativo.is_active = False
+        baba_ativo.save()
+
+        lista_espera = ListaDeEspera.objects.get(fk_baba=baba_ativo)
+        jogadores = Jogador.objects.filter(
+            Q(baba=baba_ativo) | Q(lista_de_espera=lista_espera))
         for jogador in jogadores:
-            jogador.jogos += 1
-            jogador.baba = None
+            if jogador.lista_de_espera is None:
+                jogador.jogos += 1
+                jogador.baba = None
+            else:
+                jogador.lista_de_espera = None
             jogador.save()
 
         texto_resposta = f'Todos os babas ativados os foram fechados, jogadores foram removidos do baba'
@@ -206,8 +211,8 @@ def perfil(id_whatsapp,  mensagem=None, grupo_id=None):
 
 # Lista do baba
 def lista(grupo_id):
-    baba_atual = Baba.objects.order_by(
-        '-data').filter(is_active=True).first()  # Obtém o último Baba criado
+    baba_atual = Baba.objects.filter(is_active=True).order_by(
+        '-data').first()  # Obtém o último Baba criado
     print(baba_atual)
 
     if not baba_atual:
@@ -215,10 +220,10 @@ def lista(grupo_id):
         return requisicao_post(texto_resposta, grupo_id)
 
     linha = Jogador.objects.filter(
-        baba=baba_atual).filter(jogara='L')
+        baba=baba_atual).filter(jogara='L').order_by("entrou_lista")
 
     gol = Jogador.objects.filter(
-        baba=baba_atual).filter(jogara='G')
+        baba=baba_atual).filter(jogara='G').order_by("entrou_lista")
 
     if (len(linha) + len(gol)) == 0:
         texto_resposta = "A lista do baba está vazia."
@@ -233,6 +238,15 @@ def lista(grupo_id):
             texto_resposta += '\nLista de Goleiros:\n'
             for i in range(len(gol)):
                 texto_resposta += f"{i+1}. {gol[i].nome}\n"
+
+        lista_espera = ListaDeEspera.objects.get(fk_baba=baba_atual)
+        jogadores_na_lista = Jogador.objects.filter(
+            lista_de_espera=lista_espera).order_by("entrou_lista")
+
+        if jogadores_na_lista.exists():
+            texto_resposta += '\nLista de Espera:\n'
+            for i in range(len(jogadores_na_lista)):
+                texto_resposta += f"{i+1}. {jogadores_na_lista[i].nome} ({jogadores_na_lista[i].jogara})\n"
 
         texto_resposta += f"{'-' * 75}\nTotal de participantes: {len(linha) + len(gol)}"
         # texto_resposta +=f"\n\nSalve na Agenda:\n https://calendar.google.com/calendar/render?action=TEMPLATE&text={baba_atual.nome.replace(' ','%20')}&dates={baba_atual.data.strftime('%Y%m%d')+baba_atual.hora_inicio.strftime('T%H%M%SZ')}/{baba_atual.data.strftime('%Y%m%d')+baba_atual.hora_fim.strftime('T%H%M%SZ')}&details={baba_atual.descrição.replace(' ','%20')}&location={baba_atual.local.replace(' ','%20')}" # type: ignore
@@ -257,13 +271,19 @@ def salvar_jogador(jogador, baba, posicao, grupo_id):
     qtd_jogadores_gol = Jogador.objects.filter(
         baba=baba).filter(jogara='G').count()
 
+    jogador.entrou_lista = timezone.now()
     if posicao == 'L':
         if baba.limite_linha > qtd_jogadores_linha:
             jogador.baba = baba
             jogador.jogara = 'L'
             jogador.save()
         else:
-            texto_resposta = 'O Baba ja atingiu seu limite de pessoas na linha'
+            lista_espera = ListaDeEspera.objects.get(fk_baba=baba)
+            jogador.lista_de_espera = lista_espera
+            jogador.jogara = 'L'
+            jogador.save()
+
+            texto_resposta = 'O Baba ja atingiu seu limite de pessoas na linha\nAdicionando na lista de espera'
             requisicao_post(texto_resposta, grupo_id)
             return
     else:
@@ -272,14 +292,15 @@ def salvar_jogador(jogador, baba, posicao, grupo_id):
             jogador.jogara = 'G'
             jogador.save()
         else:
-            texto_resposta = 'O Baba ja atingiu seu limite de pessoas no gol'
+            lista_espera = ListaDeEspera.objects.get(fk_baba=baba)
+            jogador.lista_de_espera = lista_espera
+            jogador.jogara = 'G'
+            jogador.save()
+
+            texto_resposta = 'O Baba ja atingiu seu limite de pessoas no gol\nAdicionando na lista de espera'
             requisicao_post(texto_resposta, grupo_id)
             return
     return lista(grupo_id)
-
-
-def lista_de_espera(jogador, grupo_id):
-    pass
 
 
 @cadastro_required
@@ -291,8 +312,9 @@ def participar(id_whatsapp, mensagem=None, adicionado=None, grupo_id=None,):
         else:
             jogador = adicionado
         # Verifica se o jogador está associado a um Baba existente
-        if jogador.baba is not None:
-            texto_resposta = f"Já está cadastrado e associado a um baba '{jogador.baba.nome}'."
+        print()
+        if jogador.baba is not None or jogador.lista_de_espera is not None:
+            texto_resposta = f"Já está associado a um baba."
             return requisicao_post(texto_resposta, grupo_id)
         else:
             raise Baba.DoesNotExist  # Força a criação de um novo Baba para o jogador
@@ -359,8 +381,22 @@ def sair(id_whatsapp, grupo_id):
     if jogador.baba is not None:
         jogador.baba = None
         jogador.save()
+
         texto_resposta = f"O Jogador {jogador.nome} saiu da lista do baba."
-        return requisicao_post(texto_resposta, grupo_id)
+        requisicao_post(texto_resposta, grupo_id)
+
+        # Chamando a função de passar o jogador da espera para a lista
+        lista_espera_adicao(jogador.jogara, grupo_id)
+        return
+
+    elif jogador.lista_de_espera is not None:
+        jogador.lista_de_espera = None
+        jogador.save()
+        
+        texto_resposta = f"O Jogador {jogador.nome} saiu da lista de espera do baba."
+        requisicao_post(texto_resposta, grupo_id)
+        return
+
     else:
         texto_resposta = f"Não está associado a nenhum baba."
         return requisicao_post(texto_resposta, grupo_id)
@@ -393,7 +429,6 @@ def adicionar(id_whatsapp,  mensagem=None, grupo_id=None):
 def remover(id_whatsapp,  mensagem=None, grupo_id=None):
     if mensagem != None and mensagem != '':
         mensagem_nova = mensagem.replace('@', '').split()
-        print(mensagem_nova)
         try:
             Jogador.objects.get(id_whatsapp=mensagem_nova[1])
             sair(id_whatsapp=mensagem_nova[1], grupo_id=grupo_id)
@@ -404,8 +439,10 @@ def remover(id_whatsapp,  mensagem=None, grupo_id=None):
 
         except Exception as e:
             print(f"Error: {e}")
+            # Garante que tem uma resposta pro erro
+            texto_resposta = f"Erro inesperado: {e}"
     else:
-        texto_resposta = 'Você não marcou ninguem para adicionar no *BABA*\nPara adicionar alguem use o comando e marque alguem cadastrado.'
+        texto_resposta = 'Você não marcou ninguem para Remover no *BABA*\nPara adicionar alguem use o comando e marque alguem cadastrado.'
     return requisicao_post(texto_resposta, grupo_id)
 
 
@@ -430,7 +467,26 @@ def rank(grupo_id):
     return requisicao_post(texto_resposta, grupo_id)
 
 
+# Lista de Espera lógica
+def lista_espera_adicao(posicao_liberada, grupo_id):
+    baba_atual = Baba.objects.filter(is_active=True).order_by(
+        '-data').first()
+    lista_espera = ListaDeEspera.objects.get(fk_baba=baba_atual)
+    jogadores_na_espera = Jogador.objects.filter(lista_de_espera=lista_espera)
+
+    if jogadores_na_espera.exists():
+        jogador = jogadores_na_espera.filter(
+            jogara=posicao_liberada).order_by("entrou_lista").first()
+        if jogador != None:
+            jogador.lista_de_espera = None
+            print(jogador.nome)
+            salvar_jogador(jogador, baba_atual, posicao_liberada, grupo_id)
+
+    else:
+        return
 # Resenha
+
+
 def entrar_em_biel(nome, grupo_id):
     texto_resposta = f"Banido Permanentemente {nome}"
     return requisicao_post(texto_resposta, grupo_id)
@@ -588,7 +644,7 @@ def comandos(
 # Grupos permitidos
 # allowed_groups = ['120363429280772424@g.us',
 #                   '120363412694811478@g.us', '120363214522520270@g.us']
-allowed_groups = ['120363412694811478@g.us', '120363214522520270@g.us']
+allowed_groups = ['120363412694811478@g.us']
 
 
 @csrf_exempt
