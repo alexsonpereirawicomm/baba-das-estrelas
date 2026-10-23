@@ -102,9 +102,9 @@ def fecharLista(id_whatsapp, grupo_id):
         texto_resposta = f'Não tem nenhum baba aberto'
         return requisicao_post(texto_resposta, grupo_id)
     else:
-        texto_resposta = f'o Baba {baba_ativo.nome} foi fechado pelo ADM {Jogador.objects.get(id_whatsapp=id_whatsapp).nome}\n Obrigado pela presença de todos!'
-        requisicao_post(texto_resposta, grupo_id)
-        # requisicao_post(texto_resposta, environ.get('CANAL_DE_AVISOS_ID'))
+        texto_resposta = f'o Baba {baba_ativo.nome} foi fechado pelo ADM {Jogador.objects.get(id_whatsapp=id_whatsapp).nome}\nObrigado pela presença de todos!'
+        requisicao_post(texto_resposta, environ.get('CANAL_DE_AVISOS_ID'))
+        # requisicao_post(texto_resposta, grupo_id)
 
         # Tira o baba para não ativos
         baba_ativo.is_active = False
